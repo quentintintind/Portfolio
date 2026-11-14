@@ -1,3 +1,4 @@
+import './style.css';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
@@ -42,7 +43,7 @@ function animate() {
   requestAnimationFrame(animate);
   
   if (boombox) {
-    boombox.rotation.y += 0.005; // Rotation lente
+    boombox.rotation.y += 0.005;
   }
 
   renderer.render(scene, camera);

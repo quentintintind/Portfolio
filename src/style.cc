@@ -1,0 +1,23 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #0b0b0b;
+  font-family: sans-serif;
+  color: #ffffff;
+}
+
+#canvas-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.hero {
+  position: relative;
+  z-index: 1;
+  padding: 4rem;
+}
