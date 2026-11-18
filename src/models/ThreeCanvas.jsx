@@ -37,42 +37,51 @@ export default function ThreeCanvas() {
     directionalLight.position.set(5, 5, 5);
     scene.add(directionalLight);
 
-    // --- 3. CHARGEMENT DES TEMPLATES & INSTANCIATION ---
+    // --- 3. VARIABLES & CHARGEMENT ---
     const loader = new GLTFLoader();
     const textureLoader = new THREE.TextureLoader();
 
     let boombox = null;
+    const rotatingCDs = []; // Tableau pour stocker les instances de CD à faire tourner
 
-    // A. Chargement de la Boombox (à gauche)
+    // A. Chargement de la Boombox (placée sur la DROITE)
     loader.load('/models/boombox.glb', (gltf) => {
       boombox = gltf.scene;
       boombox.scale.set(1.5, 1.5, 1.5);
-      boombox.position.set(-2.5, 0, 0);
+      boombox.position.set(3.0, 0, 0); // Position X positive = à droite
       scene.add(boombox);
     });
 
-    // B. Chargement des templates Boîtier et CD, puis génération dynamique des projets
+    // B. Chargement des templates Boîtier et CD (placés sur la GAUCHE)
     Promise.all([
       loader.loadAsync('/models/jewel-case.glb'),
       loader.loadAsync('/models/cd.glb')
     ]).then(([caseGltf, cdGltf]) => {
       
-      // Pour chaque projet dans ton tableau de données, on instancie un boîtier et un CD
-      PROJECTS_DATA.forEach((project) => {
+      PROJECTS_DATA.forEach((project, index) => {
         const caseGroup = caseGltf.scene.clone();
         const cdGroup = cdGltf.scene.clone();
 
-        // Positionnement global du projet dans la scène
-        caseGroup.position.set(...project.position);
-        cdGroup.position.set(...project.position);
+        const scaleFactor = 0.5;
+        caseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        cdGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-        // Charger la texture spécifique de ce projet et l'injecter dans la face avant
-        const coverTexture = textureLoader.load(project.coverUrl);
-        coverTexture.colorSpace = THREE.SRGBColorSpace;
-        coverTexture.flipY = false;
+        // Positionnement sur la GAUCHE (décalé selon l'index s'il y a plusieurs projets)
+        const posX = -3.0 + (index * 2.5);
+        caseGroup.position.set(posX, 0, 0);
+        cdGroup.position.set(posX, 0, 0);
+
+        // On ajoute le CD dans le tableau pour l'animer dans la boucle
+        rotatingCDs.push(cdGroup);
+
+        // Texture dynamique de la pochette sur le boîtier
+        const coverTexture = textureLoader.load(project.coverUrl, (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.flipY = false;
+        });
 
         caseGroup.traverse((child) => {
-          if (child.isMesh && child.material.name === 'Mat_CoverFront') {
+          if (child.isMesh && (child.material.name === 'Mat_CoverFront' || child.material.name.includes('Cover'))) {
             child.material = child.material.clone();
             child.material.map = coverTexture;
             child.material.needsUpdate = true;
@@ -83,7 +92,7 @@ export default function ThreeCanvas() {
         scene.add(cdGroup);
       });
     }).catch((error) => {
-      console.error('Erreur lors du chargement des modèles 3D des boîtiers :', error);
+      console.error('Erreur lors du chargement des modèles 3D :', error);
     });
 
     // --- 4. BOUCLE D'ANIMATION ---
@@ -91,9 +100,19 @@ export default function ThreeCanvas() {
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
+      // Rotation de la boombox sur elle-même
       if (boombox) {
         boombox.rotation.y += 0.005;
       }
+
+      // =====================================================================
+      // 💿 SECTION DE ROTATION DES CD
+      // On parcourt chaque CD instancié pour lui appliquer une rotation sur l'axe Y
+      // =====================================================================
+      rotatingCDs.forEach((cd) => {
+        cd.rotation.y += 0.01; // Modifie cette valeur pour accélérer/ralentir
+      });
+      // =====================================================================
 
       controls.update();
       renderer.render(scene, camera);
