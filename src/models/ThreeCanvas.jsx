@@ -10,6 +10,8 @@ export default function ThreeCanvas() {
   useEffect(() => {
     // --- 1. SCÈNE, CAMÉRA & RENDERER ---
     const container = mountRef.current;
+    if (!container) return;
+
     const scene = new THREE.Scene();
     
     const camera = new THREE.PerspectiveCamera(
@@ -18,7 +20,7 @@ export default function ThreeCanvas() {
       0.1,
       1000
     );
-    camera.position.set(0, 1.5, 5);
+    camera.position.set(0, 1.2, 4.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -30,29 +32,29 @@ export default function ThreeCanvas() {
     controls.enableDamping = true;
 
     // --- 2. ÉCLAIRAGE ---
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
     scene.add(ambientLight);
 
     const directionalLight = new THREE.DirectionalLight(0x00f0ff, 3);
     directionalLight.position.set(5, 5, 5);
     scene.add(directionalLight);
 
-    // --- 3. VARIABLES & CHARGEMENT ---
+    // --- 3. CHARGEMENT MODÈLES & TEXTURES ---
     const loader = new GLTFLoader();
     const textureLoader = new THREE.TextureLoader();
 
     let boombox = null;
-    const rotatingCDs = []; // Tableau pour stocker les instances de CD à faire tourner
+    const rotatingCDs = [];
 
-    // A. Chargement de la Boombox (placée sur la DROITE)
+    // A. Chargement de la Boombox (placée à DROITE : X = +2.2)
     loader.load('/models/boombox.glb', (gltf) => {
       boombox = gltf.scene;
-      boombox.scale.set(1.5, 1.5, 1.5);
-      boombox.position.set(3.0, 0, 0); // Position X positive = à droite
+      boombox.scale.set(1.4, 1.4, 1.4);
+      boombox.position.set(2.2, -0.2, 0); // À droite
       scene.add(boombox);
     });
 
-    // B. Chargement des templates Boîtier et CD (placés sur la GAUCHE)
+    // B. Chargement des templates Boîtier & CD (placés à GAUCHE : X = -2.2)
     Promise.all([
       loader.loadAsync('/models/jewel-case.glb'),
       loader.loadAsync('/models/cd.glb')
@@ -62,31 +64,36 @@ export default function ThreeCanvas() {
         const caseGroup = caseGltf.scene.clone();
         const cdGroup = cdGltf.scene.clone();
 
-        const scaleFactor = 0.5;
-        caseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        cdGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        // Réduction du CD d'un quart par rapport au boîtier (0.5 * 0.75 = 0.375)
+        const caseScale = 0.5;
+        const cdScale = 0.375; 
 
-        // Positionnement sur la GAUCHE (décalé selon l'index s'il y a plusieurs projets)
-        const posX = -3.0 + (index * 2.5);
-        caseGroup.position.set(posX, 0, 0);
-        cdGroup.position.set(posX, 0, 0);
+        caseGroup.scale.set(caseScale, caseScale, caseScale);
+        cdGroup.scale.set(cdScale, cdScale, cdScale);
 
-        // On ajoute le CD dans le tableau pour l'animer dans la boucle
+        // Ancrage à GAUCHE (-2.2), avec léger décalage si plusieurs projets
+        const baseX = -2.2 + (index * 1.8);
+        caseGroup.position.set(baseX, 0, 0);
+        cdGroup.position.set(baseX + 0.3, 0, 0.1); // Légèrement sorti du boîtier
+
+        // Stockage du CD pour l'animation
         rotatingCDs.push(cdGroup);
 
-        // Texture dynamique de la pochette sur le boîtier
-        const coverTexture = textureLoader.load(project.coverUrl, (texture) => {
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.flipY = false;
-        });
+        // Texture dynamique de la pochette
+        if (project.coverUrl) {
+          const coverTexture = textureLoader.load(project.coverUrl, (texture) => {
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.flipY = false;
+          });
 
-        caseGroup.traverse((child) => {
-          if (child.isMesh && (child.material.name === 'Mat_CoverFront' || child.material.name.includes('Cover'))) {
-            child.material = child.material.clone();
-            child.material.map = coverTexture;
-            child.material.needsUpdate = true;
-          }
-        });
+          caseGroup.traverse((child) => {
+            if (child.isMesh && (child.material.name === 'Mat_CoverFront' || child.material.name.includes('Cover'))) {
+              child.material = child.material.clone();
+              child.material.map = coverTexture;
+              child.material.needsUpdate = true;
+            }
+          });
+        }
 
         scene.add(caseGroup);
         scene.add(cdGroup);
@@ -100,19 +107,15 @@ export default function ThreeCanvas() {
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      // Rotation de la boombox sur elle-même
+      // Rotation de la boombox à droite
       if (boombox) {
-        boombox.rotation.y += 0.005;
+        boombox.rotation.y += 0.004;
       }
 
-      // =====================================================================
-      // 💿 SECTION DE ROTATION DES CD
-      // On parcourt chaque CD instancié pour lui appliquer une rotation sur l'axe Y
-      // =====================================================================
+      // Rotation continue des CD à gauche sur l'axe Y
       rotatingCDs.forEach((cd) => {
-        cd.rotation.y += 0.01; // Modifie cette valeur pour accélérer/ralentir
+        cd.rotation.y += 0.015; // Ajuste la vitesse selon tes préférences
       });
-      // =====================================================================
 
       controls.update();
       renderer.render(scene, camera);
