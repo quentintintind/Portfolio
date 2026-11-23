@@ -8,22 +8,36 @@ import './style.css';
 const PROJECTS = [
   {
     id: 'halo-remix',
+    title: 'Halo Remix',
+    description:
+      'Relecture électronique et énergie rythmique travaillée autour du timbre, de la dynamique et du mix.',
     coverUrl: '/images/HALOREMIX.png',
     x: -2.2,
   },
   {
     id: 'petite-mariie',
+    title: 'Petite Mariie',
+    description:
+      'Projet musical axé sur l’ambiance, les textures et une construction progressive.',
     coverUrl: '/images/petitemariie.png',
     x: -1.1,
   },
   {
     id: 'zoe-remix',
+    title: 'Zoé Remix',
+    description:
+      'Arrangement et sound design pensés pour donner un nouvel espace et un nouveau relief au morceau.',
     coverUrl: '/images/zoeremixcovr.png',
     x: 0.0,
   },
 ];
 
-const BOOMBOX_POS = new THREE.Vector3(1.15, -0.15, 0);
+const BOOMBOX_POS = new THREE.Vector3(1.45, -0.15, -0.2);
+const CAM_POS = new THREE.Vector3(0, 0.7, 4.5);
+const CAM_TARGET = new THREE.Vector3(-0.15, -0.05, 0);
+
+// Position 3D à droite quand une pochette est sélectionnée
+const SELECTED_CASE_POS = new THREE.Vector3(1.15, 0.05, 1.35);
 
 function PortfolioApp() {
   const containerRef = useRef(null);
@@ -33,6 +47,14 @@ function PortfolioApp() {
     x: 0,
     y: 0,
   });
+
+  const [selectedProject, setSelectedProject] = useState(null);
+  const selectedIdRef = useRef(null);
+
+  // Synchronise la ref avec l'état React pour que Three.js y accède en direct
+  useEffect(() => {
+    selectedIdRef.current = selectedProject ? selectedProject.id : null;
+  }, [selectedProject]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -45,7 +67,8 @@ function PortfolioApp() {
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    camera.position.set(0, 0.8, 4.4);
+    camera.position.copy(CAM_POS);
+    camera.lookAt(CAM_TARGET);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -53,8 +76,11 @@ function PortfolioApp() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
+    // Caméra verrouillée (tu peux passer controls.enabled = true si tu veux explorer)
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    controls.target.copy(CAM_TARGET);
+    controls.enabled = false;
+    controls.update();
 
     // 2. Éclairage
     scene.add(new THREE.AmbientLight(0xffffff, 2.0));
@@ -76,7 +102,7 @@ function PortfolioApp() {
       '/models/boombox.glb',
       (gltf) => {
         boombox = gltf.scene;
-        boombox.scale.setScalar(1.45);
+        boombox.scale.setScalar(1.35);
         boombox.position.copy(BOOMBOX_POS);
         scene.add(boombox);
       },
@@ -96,15 +122,16 @@ function PortfolioApp() {
 
           const baseX = (project.x ?? -1.6) + index * 1.1;
           const basePos = new THREE.Vector3(baseX, 0, 0);
+          const bgPos = new THREE.Vector3(baseX, -0.1, -1.35); // arrière-plan quand un autre projet est actif
           const baseCaseScale = 0.5;
 
           jewelCase.scale.setScalar(baseCaseScale);
           jewelCase.position.copy(basePos);
 
-          // Ajustement local du CD à l'intérieur du boîtier (à affiner selon ton cd.glb)
+          // CD enfant de jewelCase, sans rotation
           cd.position.set(0, -0.05, -0.02);
           cd.rotation.set(0, 0, 0);
-          cd.scale.setScalar(1);
+          cd.scale.setScalar(0.55);
 
           // Application de la pochette
           if (project.coverUrl) {
@@ -126,22 +153,21 @@ function PortfolioApp() {
             });
           }
 
-          // Hiérarchie : cd enfant de jewelCase
           jewelCase.add(cd);
           scene.add(jewelCase);
 
-          // Position avancée vers la caméra quand survolé
           const dirToCam = new THREE.Vector3()
             .subVectors(camera.position, basePos)
             .normalize();
-          const hoverPos = basePos.clone().addScaledVector(dirToCam, 0.9);
+          const hoverPos = basePos.clone().addScaledVector(dirToCam, 0.85);
 
           const itemData = {
-            id: project.id,
+            project,
             jewelCase,
             cd,
             basePos,
             hoverPos,
+            bgPos,
             baseCaseScale,
             hovered: false,
           };
@@ -158,9 +184,10 @@ function PortfolioApp() {
       })
       .catch((error) => console.error('Erreur chargement CD / boîtier :', error));
 
-    // 5. Raycaster sur la fenêtre (évite d'être bloqué par un overlay UI)
+    // 5. Raycaster survol + clic fiable (pointerdown / pointerup)
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    let downPos = { x: 0, y: 0 };
 
     const updatePointer = (event) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -195,59 +222,98 @@ function PortfolioApp() {
       }
     };
 
-    const handleClick = (event) => {
+    const handlePointerDown = (event) => {
+      downPos = { x: event.clientX, y: event.clientY };
+    };
+
+    const handlePointerUp = (event) => {
+      const dist = Math.hypot(
+        event.clientX - downPos.x,
+        event.clientY - downPos.y
+      );
+      if (dist > 6) return; // ignore si c'était un glissement
+
       updatePointer(event);
       raycaster.setFromCamera(pointer, camera);
 
       const hits = raycaster.intersectObjects(clickableMeshes, false);
       if (hits.length > 0) {
-        const item = hits[0].object.userData.itemData;
-        if (item) {
-          console.log('Clic sur le projet :', item.id);
+        const hitItem = hits[0].object.userData.itemData;
+        if (hitItem) {
+          setSelectedProject(hitItem.project);
         }
+      } else if (selectedIdRef.current !== null) {
+        // Clic dans le vide : referme la fiche projet
+        setSelectedProject(null);
       }
     };
 
     window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('click', handleClick);
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerup', handlePointerUp);
 
     // 6. Boucle d'animation
     const clock = new THREE.Clock();
     let animationFrameId;
 
+    // Objets temporaires réutilisés à chaque frame pour orienter face caméra sans allouer en boucle
+    const dummyMatrix = new THREE.Matrix4();
+    const faceCamQuat = new THREE.Quaternion();
+    const tempCamPos = new THREE.Vector3();
+
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
+      const smooth = 1 - Math.exp(-9 * delta);
+      const activeId = selectedIdRef.current;
 
       if (boombox) {
         boombox.rotation.y += 0.25 * delta;
       }
 
       items.forEach((item) => {
-        const smooth = 1 - Math.exp(-10 * delta);
+        const isSelected = activeId === item.project.id;
+        const hasOtherSelected = activeId !== null && !isSelected;
 
-        // 1) Rotation uniquement quand la pochette n'est pas survolée
-        if (!item.hovered) {
-          item.jewelCase.rotation.y += 0.7 * delta;
+        // Position cible selon l'état (sélectionnée à droite / autre en arrière-plan / survolée / repos)
+        let targetPos = item.basePos;
+        let targetScale = item.baseCaseScale;
+
+        if (isSelected) {
+          targetPos = SELECTED_CASE_POS;
+          targetScale = item.baseCaseScale * 1.25;
+        } else if (hasOtherSelected) {
+          targetPos = item.bgPos;
+          targetScale = item.baseCaseScale * 0.78;
+        } else if (item.hovered) {
+          targetPos = item.hoverPos;
+          targetScale = item.baseCaseScale * 1.15;
         }
 
-        // 2) Avancée vers la caméra quand survolée (sinon retour à basePos)
-        const targetPos = item.hovered ? item.hoverPos : item.basePos;
         item.jewelCase.position.lerp(targetPos, smooth);
 
-        // 3) Léger grossissement au survol
-        const targetScale = item.hovered
-          ? item.baseCaseScale * 1.15
-          : item.baseCaseScale;
         const nextScale = THREE.MathUtils.lerp(
           item.jewelCase.scale.x,
           targetScale,
           smooth
         );
         item.jewelCase.scale.setScalar(nextScale);
+
+        // Orientation : face caméra si survolée ou sélectionnée, sinon rotation continue
+        if (item.hovered || isSelected) {
+          tempCamPos.copy(camera.position);
+          dummyMatrix.lookAt(
+            item.jewelCase.position,
+            tempCamPos,
+            item.jewelCase.up
+          );
+          faceCamQuat.setFromRotationMatrix(dummyMatrix);
+          item.jewelCase.quaternion.slerp(faceCamQuat, smooth);
+        } else {
+          item.jewelCase.rotation.y += 0.7 * delta;
+        }
       });
 
-      controls.update();
       renderer.render(scene, camera);
     };
     animate();
@@ -268,7 +334,8 @@ function PortfolioApp() {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('click', handleClick);
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
       document.body.style.cursor = 'default';
       controls.dispose();
       renderer.dispose();
@@ -288,6 +355,7 @@ function PortfolioApp() {
         overflow: 'hidden',
       }}
     >
+      {/* Tooltip au survol */}
       {tooltip.visible && (
         <div
           style={{
@@ -301,13 +369,85 @@ function PortfolioApp() {
             borderRadius: '8px',
             padding: '5px 10px',
             fontSize: '13px',
-            fontFamily: 'system-ui, sans-serif',
             zIndex: 20,
             backdropFilter: 'blur(6px)',
           }}
         >
           ouvrir ?
         </div>
+      )}
+
+      {/* Panneau projet à droite au clic */}
+      {selectedProject && (
+        <aside
+          style={{
+            position: 'fixed',
+            top: '24px',
+            right: '24px',
+            bottom: '24px',
+            width: 'min(360px, calc(100vw - 48px))',
+            padding: '24px',
+            background: 'rgba(10, 15, 24, 0.82)',
+            border: '1px solid rgba(0, 240, 255, 0.28)',
+            borderRadius: '16px',
+            color: '#f3f6fa',
+            backdropFilter: 'blur(12px)',
+            zIndex: 30,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '16px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '11px',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: '#00f0ff',
+                }}
+              >
+                Projet sélectionné
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedProject(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.18)',
+                  borderRadius: '8px',
+                  padding: '4px 10px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            <h2 style={{ fontSize: '1.6rem', marginBottom: '12px' }}>
+              {selectedProject.title}
+            </h2>
+
+            <p style={{ lineHeight: 1.6, opacity: 0.88, fontSize: '0.95rem' }}>
+              {selectedProject.description}
+            </p>
+          </div>
+
+          <p style={{ fontSize: '12px', opacity: 0.55 }}>
+            Clique sur une autre pochette ou dans le vide pour revenir.
+          </p>
+        </aside>
       )}
     </div>
   );
