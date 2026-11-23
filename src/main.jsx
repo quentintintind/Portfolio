@@ -68,7 +68,6 @@ function PortfolioApp() {
     const textureLoader = new THREE.TextureLoader();
 
     // Données interactives pour chaque projet
-    // { jewelCase, cd, hitMeshes, baseScale, hovered, animState, animProgress, cdStartPos, cdEjectPos }
     const items = [];
     const clickableMeshes = [];
 
@@ -100,13 +99,16 @@ function PortfolioApp() {
 
           const baseX = (project.x ?? -1.6) + index * 1.1;
           const baseCaseScale = 0.5;
-          const baseCdScale = 0.375;
 
+          // Position et échelle de la jewelCase (parent) dans la scène
           jewelCase.scale.setScalar(baseCaseScale);
           jewelCase.position.set(baseX, 0, 0);
 
-          cd.scale.setScalar(baseCdScale);
-          cd.position.set(baseX + 0.3, 0, 0.1);
+          // Position, rotation et échelle locales du CD par rapport à jewelCase (enfant)
+          // À ajuster à l'œil selon l'épaisseur et l'orientation de tes modèles
+          cd.position.set(0, 0, 0.02);
+          cd.rotation.set(0, 0, 0);
+          cd.scale.setScalar(0.75);
 
           // Texture de pochette si disponible
           if (project.coverUrl) {
@@ -128,20 +130,16 @@ function PortfolioApp() {
             });
           }
 
-          scene.add(jewelCase, cd);
+          // Création de la hiérarchie : cd devient enfant de jewelCase
+          jewelCase.add(cd);
+          scene.add(jewelCase);
 
           const itemData = {
             id: project.id,
             jewelCase,
             cd,
             baseCaseScale,
-            baseCdScale,
             hovered: false,
-            // 'idle' | 'ejecting' | 'flying' | 'inserted'
-            animState: 'idle',
-            animProgress: 0,
-            cdStartPos: cd.position.clone(),
-            cdEjectPos: new THREE.Vector3(baseX + 0.95, 0.15, 0.55),
           };
 
           // On rattache une référence vers itemData sur chaque mesh de la jewelCase pour le raycast
@@ -202,10 +200,9 @@ function PortfolioApp() {
       const hits = raycaster.intersectObjects(clickableMeshes, false);
       if (hits.length > 0) {
         const item = hits[0].object.userData.itemData;
-        if (item && item.animState === 'idle') {
-          item.animState = 'ejecting';
-          item.animProgress = 0;
-          item.cdStartPos.copy(item.cd.position);
+        if (item) {
+          // Séquence d'éjection/vol désactivée temporairement : les CDs restent calés dans leur pochette
+          console.log('Clic sur le projet :', item.id);
         }
       }
     };
@@ -226,7 +223,7 @@ function PortfolioApp() {
       }
 
       items.forEach((item) => {
-        // Grossissement fluide de la jewel case au survol
+        // Grossissement fluide de la jewel case (et du CD enfant) au survol
         const targetScale = item.hovered
           ? item.baseCaseScale * 1.18
           : item.baseCaseScale;
@@ -237,49 +234,6 @@ function PortfolioApp() {
           1 - Math.exp(-10 * delta)
         );
         item.jewelCase.scale.setScalar(nextScale);
-
-        // Rotation continue du CD tant qu'il n'est pas inséré dans la boombox
-        if (item.animState !== 'inserted') {
-          item.cd.rotation.y += 1.4 * delta;
-        }
-
-        // Étape 1 : le CD sort de la case
-        if (item.animState === 'ejecting') {
-          item.animProgress += delta * 1.4; // ~0.7s
-          const t = Math.min(item.animProgress, 1);
-          const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
-
-          item.cd.position.lerpVectors(item.cdStartPos, item.cdEjectPos, ease);
-
-          if (t >= 1) {
-            item.animState = 'flying';
-            item.animProgress = 0;
-            item.cdStartPos.copy(item.cd.position);
-          }
-        }
-        // Étape 2 : le CD part vers la boombox avec un léger arc en Y
-        else if (item.animState === 'flying') {
-          item.animProgress += delta * 1.1; // ~0.9s
-          const t = Math.min(item.animProgress, 1);
-          const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
-          const targetPos = boombox ? boombox.position : BOOMBOX_POS;
-          item.cd.position.lerpVectors(item.cdStartPos, targetPos, ease);
-          item.cd.position.y += Math.sin(t * Math.PI) * 0.45;
-
-          // Le CD rétrécit un peu en entrant dans la boombox
-          const flyScale = THREE.MathUtils.lerp(
-            item.baseCdScale,
-            item.baseCdScale * 0.45,
-            ease
-          );
-          item.cd.scale.setScalar(flyScale);
-
-          if (t >= 1) {
-            item.animState = 'inserted';
-            item.cd.visible = false; // rentré dans la boombox
-          }
-        }
       });
 
       controls.update();
