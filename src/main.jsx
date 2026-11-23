@@ -23,13 +23,11 @@ const PROJECTS = [
   },
 ];
 
-// Position cible de la boombox (rapprochée du centre)
 const BOOMBOX_POS = new THREE.Vector3(1.15, -0.15, 0);
 
 function PortfolioApp() {
   const containerRef = useRef(null);
 
-  // État React uniquement pour afficher/déplacer le petit badge "ouvrir ?" à côté du curseur
   const [tooltip, setTooltip] = useState({
     visible: false,
     x: 0,
@@ -47,7 +45,7 @@ function PortfolioApp() {
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    camera.position.set(0, 0.8, 4.2);
+    camera.position.set(0, 0.8, 4.4);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -59,7 +57,7 @@ function PortfolioApp() {
     controls.enableDamping = true;
 
     // 2. Éclairage
-    scene.add(new THREE.AmbientLight(0xffffff, 1.9));
+    scene.add(new THREE.AmbientLight(0xffffff, 2.0));
     const dirLight = new THREE.DirectionalLight(0x00f0ff, 3.2);
     dirLight.position.set(4, 5, 5);
     scene.add(dirLight);
@@ -67,14 +65,13 @@ function PortfolioApp() {
     const gltfLoader = new GLTFLoader();
     const textureLoader = new THREE.TextureLoader();
 
-    // Données interactives pour chaque projet
     const items = [];
     const clickableMeshes = [];
 
     let boombox = null;
     let hoveredItem = null;
 
-    // 3. Chargement de la BOOMBOX (rapprochée)
+    // 3. Chargement de la BOOMBOX
     gltfLoader.load(
       '/models/boombox.glb',
       (gltf) => {
@@ -98,19 +95,18 @@ function PortfolioApp() {
           const cd = cdGltf.scene.clone();
 
           const baseX = (project.x ?? -1.6) + index * 1.1;
+          const basePos = new THREE.Vector3(baseX, 0, 0);
           const baseCaseScale = 0.5;
 
-          // Position et échelle de la jewelCase (parent) dans la scène
           jewelCase.scale.setScalar(baseCaseScale);
-          jewelCase.position.set(baseX, 0, 0);
+          jewelCase.position.copy(basePos);
 
-          // Position, rotation et échelle locales du CD par rapport à jewelCase (enfant)
-          // À ajuster à l'œil selon l'épaisseur et l'orientation de tes modèles
-          cd.position.set(0, 0, 0.02);
+          // Ajustement local du CD à l'intérieur du boîtier (à affiner selon ton cd.glb)
+          cd.position.set(0, 0, 0.01);
           cd.rotation.set(0, 0, 0);
-          cd.scale.setScalar(0.75);
+          cd.scale.setScalar(0.55);
 
-          // Texture de pochette si disponible
+          // Application de la pochette
           if (project.coverUrl) {
             const coverTexture = textureLoader.load(project.coverUrl);
             coverTexture.colorSpace = THREE.SRGBColorSpace;
@@ -121,7 +117,7 @@ function PortfolioApp() {
                 child.isMesh &&
                 child.material &&
                 (child.material.name === 'Mat_CoverFront' ||
-                  child.material.name.includes('Cover'))
+                  child.material.name.toLowerCase().includes('cover'))
               ) {
                 child.material = child.material.clone();
                 child.material.map = coverTexture;
@@ -130,19 +126,26 @@ function PortfolioApp() {
             });
           }
 
-          // Création de la hiérarchie : cd devient enfant de jewelCase
+          // Hiérarchie : cd enfant de jewelCase
           jewelCase.add(cd);
           scene.add(jewelCase);
+
+          // Position avancée vers la caméra quand survolé
+          const dirToCam = new THREE.Vector3()
+            .subVectors(camera.position, basePos)
+            .normalize();
+          const hoverPos = basePos.clone().addScaledVector(dirToCam, 0.9);
 
           const itemData = {
             id: project.id,
             jewelCase,
             cd,
+            basePos,
+            hoverPos,
             baseCaseScale,
             hovered: false,
           };
 
-          // On rattache une référence vers itemData sur chaque mesh de la jewelCase pour le raycast
           jewelCase.traverse((child) => {
             if (child.isMesh) {
               child.userData.itemData = itemData;
@@ -155,7 +158,7 @@ function PortfolioApp() {
       })
       .catch((error) => console.error('Erreur chargement CD / boîtier :', error));
 
-    // 5. Raycaster pour le survol et le clic sur la jewel case
+    // 5. Raycaster sur la fenêtre (évite d'être bloqué par un overlay UI)
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
@@ -172,7 +175,6 @@ function PortfolioApp() {
       const hits = raycaster.intersectObjects(clickableMeshes, false);
       const hitItem = hits.length > 0 ? hits[0].object.userData.itemData : null;
 
-      // Reset ancien hover
       if (hoveredItem && hoveredItem !== hitItem) {
         hoveredItem.hovered = false;
       }
@@ -181,14 +183,14 @@ function PortfolioApp() {
 
       if (hoveredItem) {
         hoveredItem.hovered = true;
-        renderer.domElement.style.cursor = 'pointer';
+        document.body.style.cursor = 'pointer';
         setTooltip({
           visible: true,
           x: event.clientX,
           y: event.clientY,
         });
       } else {
-        renderer.domElement.style.cursor = 'grab';
+        document.body.style.cursor = 'default';
         setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
       }
     };
@@ -201,14 +203,13 @@ function PortfolioApp() {
       if (hits.length > 0) {
         const item = hits[0].object.userData.itemData;
         if (item) {
-          // Séquence d'éjection/vol désactivée temporairement : les CDs restent calés dans leur pochette
           console.log('Clic sur le projet :', item.id);
         }
       }
     };
 
-    renderer.domElement.addEventListener('pointermove', handlePointerMove);
-    renderer.domElement.addEventListener('click', handleClick);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('click', handleClick);
 
     // 6. Boucle d'animation
     const clock = new THREE.Clock();
@@ -223,15 +224,25 @@ function PortfolioApp() {
       }
 
       items.forEach((item) => {
-        // Grossissement fluide de la jewel case (et du CD enfant) au survol
+        const smooth = 1 - Math.exp(-10 * delta);
+
+        // 1) Rotation uniquement quand la pochette n'est pas survolée
+        if (!item.hovered) {
+          item.jewelCase.rotation.y += 0.7 * delta;
+        }
+
+        // 2) Avancée vers la caméra quand survolée (sinon retour à basePos)
+        const targetPos = item.hovered ? item.hoverPos : item.basePos;
+        item.jewelCase.position.lerp(targetPos, smooth);
+
+        // 3) Léger grossissement au survol
         const targetScale = item.hovered
-          ? item.baseCaseScale * 1.18
+          ? item.baseCaseScale * 1.15
           : item.baseCaseScale;
-        const currentScale = item.jewelCase.scale.x;
         const nextScale = THREE.MathUtils.lerp(
-          currentScale,
+          item.jewelCase.scale.x,
           targetScale,
-          1 - Math.exp(-10 * delta)
+          smooth
         );
         item.jewelCase.scale.setScalar(nextScale);
       });
@@ -256,8 +267,9 @@ function PortfolioApp() {
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
-      renderer.domElement.removeEventListener('click', handleClick);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('click', handleClick);
+      document.body.style.cursor = 'default';
       controls.dispose();
       renderer.dispose();
       if (renderer.domElement && container.contains(renderer.domElement)) {
