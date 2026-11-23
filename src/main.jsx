@@ -102,7 +102,7 @@ function PortfolioApp() {
           jewelCase.position.copy(basePos);
 
           // Ajustement local du CD à l'intérieur du boîtier (à affiner selon ton cd.glb)
-          cd.position.set(1, -0.05, -0.02);
+          cd.position.set(0, -0.05, -0.02);
           cd.rotation.set(0, 0, 0);
           cd.scale.setScalar(1);
 
