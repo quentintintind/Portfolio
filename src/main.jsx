@@ -32,11 +32,20 @@ const PROJECTS = [
   },
 ];
 
-const BOOMBOX_POS = new THREE.Vector3(1.45, -0.15, -0.2);
+// ============================================================================
+// POSITIONNEMENT DE LA BOOMBOX (plus grande + placée sous les CD)
+// ============================================================================
+// Les CD sont autour de y = 0 ; y = -1.15 les place en dessous (ajuste x, y, z selon ton modèle)
+const BOOMBOX_POS = new THREE.Vector3(0.2, -1.15, -0.2);
+const BOOMBOX_SCALE = 2.1;
+
 const CAM_POS = new THREE.Vector3(0, 0.7, 4.5);
 const CAM_TARGET = new THREE.Vector3(-0.15, -0.05, 0);
 
-// Position 3D à droite quand une pochette est sélectionnée
+// ============================================================================
+// POSITIONNEMENT DE LA JAQUETTE AU CLIC (onClick)
+// ============================================================================
+// Modifie ces coordonnées (x, y, z) pour changer l'endroit où arrive la jaquette cliquée
 const SELECTED_CASE_POS = new THREE.Vector3(1.15, 0.05, 1.35);
 
 function PortfolioApp() {
@@ -65,6 +74,20 @@ function PortfolioApp() {
 
     // 1. Scène, caméra et renderer
     const scene = new THREE.Scene();
+
+    // ========================================================================
+    // FOND DE LA SCÈNE (à décommenter / adapter plus tard si tu veux un fond)
+    // ========================================================================
+    // Option A : Couleur unie
+    // scene.background = new THREE.Color(0x0b0f17);
+    //
+    // Option B : Image / texture de fond (décommenter et remplacer le chemin)
+    // const bgTexture = new THREE.TextureLoader().load('/images/fond.png');
+    // bgTexture.colorSpace = THREE.SRGBColorSpace;
+    // scene.background = bgTexture;
+    //
+    // Option C : Brouillard léger pour fondre la profondeur (utile si fond animé / grilles / étoiles)
+    // scene.fog = new THREE.FogExp2(0x0b0f17, 0.04);
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.copy(CAM_POS);
@@ -102,7 +125,7 @@ function PortfolioApp() {
       '/models/boombox.glb',
       (gltf) => {
         boombox = gltf.scene;
-        boombox.scale.setScalar(1.35);
+        boombox.scale.setScalar(BOOMBOX_SCALE);
         boombox.position.copy(BOOMBOX_POS);
         scene.add(boombox);
       },
@@ -127,6 +150,7 @@ function PortfolioApp() {
 
           jewelCase.scale.setScalar(baseCaseScale);
           jewelCase.position.copy(basePos);
+          jewelCase.rotation.set(0, 0, 0);
 
           // CD enfant de jewelCase, sans rotation
           cd.position.set(0, -0.05, -0.02);
@@ -256,26 +280,38 @@ function PortfolioApp() {
     const clock = new THREE.Clock();
     let animationFrameId;
 
-    // Objets temporaires réutilisés à chaque frame pour orienter face caméra sans allouer en boucle
-    const dummyMatrix = new THREE.Matrix4();
-    const faceCamQuat = new THREE.Quaternion();
-    const tempCamPos = new THREE.Vector3();
+    // Ajuste selon le sens de face de ton modèle (-Math.PI / 2, Math.PI / 2, Math.PI ou 0)
+    const faceOffsetAngle = Math.PI / 2;
 
-    // Correction d'orientation de 90° sur l'axe Y (teste -Math.PI / 2 ou Math.PI si besoin)
-    const faceOffsetQuat = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      Math.PI / 2
-    );
+    const normalizeAngle = (angle) => {
+      let a = angle;
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
+    };
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
       const smooth = 1 - Math.exp(-9 * delta);
       const activeId = selectedIdRef.current;
 
+      // ======================================================================
+      // ZONE D'ANIMATION 1 : LA BOOMBOX
+      // C'est ici que tu ajouteras tes futures animations sur la boombox
+      // (ex: pulsation sur le beat, mouvement léger, ouverture/vibration, etc.)
+      // ======================================================================
       if (boombox) {
         boombox.rotation.y += 0.25 * delta;
+        // Exemple à décommenter/adapter plus tard :
+        // boombox.position.y = BOOMBOX_POS.y + Math.sin(elapsed * 2) * 0.04;
       }
+
+      // ======================================================================
+      // ZONE D'ANIMATION 2 : LE FOND (si tu ajoutes un mesh/particules/fond)
+      // ======================================================================
+      // Ex : bgMesh.rotation.z += 0.05 * delta;
 
       items.forEach((item) => {
         const isSelected = activeId === item.project.id;
@@ -286,6 +322,7 @@ function PortfolioApp() {
         let targetScale = item.baseCaseScale;
 
         if (isSelected) {
+          // <-- POSITIONNEMENT DE LA JAQUETTE AU CLIC (via SELECTED_CASE_POS)
           targetPos = SELECTED_CASE_POS;
           targetScale = item.baseCaseScale * 1.25;
         } else if (hasOtherSelected) {
@@ -305,20 +342,39 @@ function PortfolioApp() {
         );
         item.jewelCase.scale.setScalar(nextScale);
 
-        // Orientation : face caméra (avec correction de sens) si survolée ou sélectionnée, sinon rotation continue
+        // Toujours ramener X et Z à 0 pour éviter que la pochette ne s'incline de travers
+        item.jewelCase.rotation.x = THREE.MathUtils.lerp(
+          item.jewelCase.rotation.x,
+          0,
+          smooth
+        );
+        item.jewelCase.rotation.z = THREE.MathUtils.lerp(
+          item.jewelCase.rotation.z,
+          0,
+          smooth
+        );
+
+        // Orientation Y : face caméra (horizontale) si survolée ou sélectionnée, sinon rotation continue
         if (item.hovered || isSelected) {
-          tempCamPos.copy(camera.position);
-          dummyMatrix.lookAt(
-            item.jewelCase.position,
-            tempCamPos,
-            item.jewelCase.up
-          );
-          faceCamQuat.setFromRotationMatrix(dummyMatrix);
-          faceCamQuat.multiply(faceOffsetQuat);
-          item.jewelCase.quaternion.slerp(faceCamQuat, smooth);
+          const dx = camera.position.x - item.jewelCase.position.x;
+          const dz = camera.position.z - item.jewelCase.position.z;
+          const targetYaw = Math.atan2(dx, dz) + faceOffsetAngle;
+          const currentYaw = item.jewelCase.rotation.y;
+          const deltaYaw = normalizeAngle(targetYaw - currentYaw);
+
+          item.jewelCase.rotation.y = currentYaw + deltaYaw * smooth;
         } else {
           item.jewelCase.rotation.y += 0.7 * delta;
         }
+
+        // ====================================================================
+        // ZONE D'ANIMATION 3 : LE CD À L'INTÉRIEUR DU BOÎTIER (`item.cd`)
+        // C'est ici que tu pourras faire glisser / sortir le CD quand
+        // `isSelected` est vrai (et le rentrer quand il ne l'est plus)
+        // ====================================================================
+        // Ex :
+        // const targetCdX = isSelected ? 0.35 : 0;
+        // item.cd.position.x = THREE.MathUtils.lerp(item.cd.position.x, targetCdX, smooth);
       });
 
       renderer.render(scene, camera);
