@@ -39,6 +39,14 @@ export function createSceneAnimator({
       // state.boombox.position.y = BOOMBOX_POS.y + Math.sin(elapsed * 2) * 0.04;
     }
 
+    if (state.speakers && state.speakersBaseScale) {
+      const pulse = 1 + Math.sin(elapsed * 6) * 0.04;
+      state.speakers.scale.set(
+        state.speakersBaseScale.x * pulse,
+        state.speakersBaseScale.y * pulse,
+        state.speakersBaseScale.z * pulse
+      );
+    }
     // ========================================================================
     // ZONE D'ANIMATION 2 : LE FOND (si tu ajoutes un mesh/particules/fond)
     // ========================================================================

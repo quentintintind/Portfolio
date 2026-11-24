@@ -48,6 +48,7 @@ export function createPortfolioScene() {
   };
 
   // 3. Chargement de la BOOMBOX
+// 3. Chargement de la BOOMBOX + inspection de la hiérarchie pour isoler les speakers
   gltfLoader.load(
     '/models/boombox.glb',
     (gltf) => {
@@ -56,6 +57,32 @@ export function createPortfolioScene() {
       boombox.position.copy(BOOMBOX_POS);
       scene.add(boombox);
       state.boombox = boombox;
+      const speakersMesh = boombox.getObjectByName('boombox_boombox_speakers_0');
+      state.speakers = speakersMesh || null;
+      if (speakersMesh) {
+        state.speakersBaseScale = speakersMesh.scale.clone();
+      }
+
+      // Liste détaillée de tous les nœuds / meshes du modèle
+      const nodes = [];
+      boombox.traverse((obj) => {
+        nodes.push({
+          name: obj.name || '(sans nom)',
+          type: obj.type,
+          isMesh: Boolean(obj.isMesh),
+          parent: obj.parent?.name || '(racine)',
+        });
+      });
+
+      console.group('[Boombox GLB] Hiérarchie des objets');
+      console.table(nodes);
+
+      // Recherche rapide des noms qui évoquent un speaker / woofer / tweeter / hp
+      const speakerCandidates = nodes.filter((n) =>
+        /speaker|woofer|tweeter|hp|haut|parleur|cone|driver|sub/i.test(n.name)
+      );
+      console.log('Candidats speakers détectés par nom :', speakerCandidates);
+      console.groupEnd();
     },
     undefined,
     (error) => console.error('Erreur chargement boombox :', error)
@@ -67,6 +94,30 @@ export function createPortfolioScene() {
     gltfLoader.loadAsync('/models/cd.glb'),
   ])
     .then(([caseGltf, cdGltf]) => {
+        const caseNodes = [];
+      caseGltf.scene.traverse((obj) => {
+        caseNodes.push({
+          name: obj.name || '(sans nom)',
+          type: obj.type,
+          isMesh: Boolean(obj.isMesh),
+          material: obj.material?.name || '',
+          parent: obj.parent?.name || '(racine)',
+          pos: [
+            Number(obj.position.x.toFixed(3)),
+            Number(obj.position.y.toFixed(3)),
+            Number(obj.position.z.toFixed(3)),
+          ],
+          rot: [
+            Number(obj.rotation.x.toFixed(3)),
+            Number(obj.rotation.y.toFixed(3)),
+            Number(obj.rotation.z.toFixed(3)),
+          ],
+        });
+      });
+      console.group('[Jewel Case GLB] Hiérarchie des objets');
+      console.log(caseNodes);
+      console.groupEnd();
+
       PROJECTS.forEach((project, index) => {
         const jewelCase = caseGltf.scene.clone();
         const cd = cdGltf.scene.clone();
