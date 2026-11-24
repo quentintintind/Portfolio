@@ -44,11 +44,12 @@ export function createPortfolioScene() {
 
   const state = {
     boombox: null,
+    speakers: null,
+    speakersBaseScale: null,
     hoveredItem: null,
   };
 
   // 3. Chargement de la BOOMBOX
-// 3. Chargement de la BOOMBOX + inspection de la hiérarchie pour isoler les speakers
   gltfLoader.load(
     '/models/boombox.glb',
     (gltf) => {
@@ -57,32 +58,12 @@ export function createPortfolioScene() {
       boombox.position.copy(BOOMBOX_POS);
       scene.add(boombox);
       state.boombox = boombox;
+
       const speakersMesh = boombox.getObjectByName('boombox_boombox_speakers_0');
       state.speakers = speakersMesh || null;
       if (speakersMesh) {
         state.speakersBaseScale = speakersMesh.scale.clone();
       }
-
-      // Liste détaillée de tous les nœuds / meshes du modèle
-      const nodes = [];
-      boombox.traverse((obj) => {
-        nodes.push({
-          name: obj.name || '(sans nom)',
-          type: obj.type,
-          isMesh: Boolean(obj.isMesh),
-          parent: obj.parent?.name || '(racine)',
-        });
-      });
-
-      console.group('[Boombox GLB] Hiérarchie des objets');
-      console.table(nodes);
-
-      // Recherche rapide des noms qui évoquent un speaker / woofer / tweeter / hp
-      const speakerCandidates = nodes.filter((n) =>
-        /speaker|woofer|tweeter|hp|haut|parleur|cone|driver|sub/i.test(n.name)
-      );
-      console.log('Candidats speakers détectés par nom :', speakerCandidates);
-      console.groupEnd();
     },
     undefined,
     (error) => console.error('Erreur chargement boombox :', error)
@@ -94,37 +75,15 @@ export function createPortfolioScene() {
     gltfLoader.loadAsync('/models/cd.glb'),
   ])
     .then(([caseGltf, cdGltf]) => {
-        const caseNodes = [];
-      caseGltf.scene.traverse((obj) => {
-        caseNodes.push({
-          name: obj.name || '(sans nom)',
-          type: obj.type,
-          isMesh: Boolean(obj.isMesh),
-          material: obj.material?.name || '',
-          parent: obj.parent?.name || '(racine)',
-          pos: [
-            Number(obj.position.x.toFixed(3)),
-            Number(obj.position.y.toFixed(3)),
-            Number(obj.position.z.toFixed(3)),
-          ],
-          rot: [
-            Number(obj.rotation.x.toFixed(3)),
-            Number(obj.rotation.y.toFixed(3)),
-            Number(obj.rotation.z.toFixed(3)),
-          ],
-        });
-      });
-      console.group('[Jewel Case GLB] Hiérarchie des objets');
-      console.log(caseNodes);
-      console.groupEnd();
-
       PROJECTS.forEach((project, index) => {
         const jewelCase = caseGltf.scene.clone();
         const cd = cdGltf.scene.clone();
+        const caseFront = jewelCase.getObjectByName('Case_Front') || null;
+        const caseFrontBaseRotZ = caseFront ? caseFront.rotation.z : 0;
 
         const baseX = (project.x ?? -1.6) + index * 1.1;
         const basePos = new THREE.Vector3(baseX, 0, 0);
-        const bgPos = new THREE.Vector3(baseX, -0.1, -1.35); // arrière-plan quand un autre projet est actif
+        const bgPos = new THREE.Vector3(baseX, -0.1, -1.35);
         const baseCaseScale = 0.5;
 
         jewelCase.scale.setScalar(baseCaseScale);
@@ -132,7 +91,8 @@ export function createPortfolioScene() {
         jewelCase.rotation.set(0, 0, 0);
 
         // CD enfant de jewelCase, sans rotation
-        cd.position.set(0, -0.05, -0.02);
+        const cdBasePos = new THREE.Vector3(0, -0.05, -0.02);
+        cd.position.copy(cdBasePos);
         cd.rotation.set(0, 0, 0);
         cd.scale.setScalar(1);
 
@@ -168,11 +128,16 @@ export function createPortfolioScene() {
           project,
           jewelCase,
           cd,
+          cdBasePos,
+          caseFront,
+          caseFrontBaseRotZ,
           basePos,
           hoverPos,
           bgPos,
           baseCaseScale,
           hovered: false,
+          selectElapsed: 0,
+          cdArrivedAt: null,
         };
 
         jewelCase.traverse((child) => {
