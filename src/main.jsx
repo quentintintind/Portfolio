@@ -131,7 +131,7 @@ function PortfolioApp() {
           // CD enfant de jewelCase, sans rotation
           cd.position.set(0, -0.05, -0.02);
           cd.rotation.set(0, 0, 0);
-          cd.scale.setScalar(0.55);
+          cd.scale.setScalar(1);
 
           // Application de la pochette
           if (project.coverUrl) {
@@ -261,6 +261,12 @@ function PortfolioApp() {
     const faceCamQuat = new THREE.Quaternion();
     const tempCamPos = new THREE.Vector3();
 
+    // Correction d'orientation de 90° sur l'axe Y (teste -Math.PI / 2 ou Math.PI si besoin)
+    const faceOffsetQuat = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      Math.PI / 2
+    );
+
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
@@ -275,7 +281,7 @@ function PortfolioApp() {
         const isSelected = activeId === item.project.id;
         const hasOtherSelected = activeId !== null && !isSelected;
 
-        // Position cible selon l'état (sélectionnée à droite / autre en arrière-plan / survolée / repos)
+        // Position et zoom selon l'état (sélectionnée à droite / autre en arrière-plan / survolée / repos)
         let targetPos = item.basePos;
         let targetScale = item.baseCaseScale;
 
@@ -299,7 +305,7 @@ function PortfolioApp() {
         );
         item.jewelCase.scale.setScalar(nextScale);
 
-        // Orientation : face caméra si survolée ou sélectionnée, sinon rotation continue
+        // Orientation : face caméra (avec correction de sens) si survolée ou sélectionnée, sinon rotation continue
         if (item.hovered || isSelected) {
           tempCamPos.copy(camera.position);
           dummyMatrix.lookAt(
@@ -308,6 +314,7 @@ function PortfolioApp() {
             item.jewelCase.up
           );
           faceCamQuat.setFromRotationMatrix(dummyMatrix);
+          faceCamQuat.multiply(faceOffsetQuat);
           item.jewelCase.quaternion.slerp(faceCamQuat, smooth);
         } else {
           item.jewelCase.rotation.y += 0.7 * delta;
