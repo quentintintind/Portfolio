@@ -35,7 +35,6 @@ const PROJECTS = [
 // ============================================================================
 // POSITIONNEMENT DE LA BOOMBOX (plus grande + placée sous les CD)
 // ============================================================================
-// Les CD sont autour de y = 0 ; y = -1.15 les place en dessous (ajuste x, y, z selon ton modèle)
 const BOOMBOX_POS = new THREE.Vector3(0.2, -1.15, -0.2);
 const BOOMBOX_SCALE = 2.1;
 
@@ -43,10 +42,10 @@ const CAM_POS = new THREE.Vector3(0, 0.7, 4.5);
 const CAM_TARGET = new THREE.Vector3(-0.15, -0.05, 0);
 
 // ============================================================================
-// POSITIONNEMENT DE LA JAQUETTE AU CLIC (onClick)
+// POSITIONNEMENT DE LA JAQUETTE AU CLIC (onClick) — À GAUCHE DE L'ÉCRAN
 // ============================================================================
-// Modifie ces coordonnées (x, y, z) pour changer l'endroit où arrive la jaquette cliquée
-const SELECTED_CASE_POS = new THREE.Vector3(1.15, 0.05, 1.35);
+// x négatif (-1.15) place la jaquette à gauche pour ne pas passer derrière le panneau à droite
+const SELECTED_CASE_POS = new THREE.Vector3(-1.15, 0.05, 1.35);
 
 function PortfolioApp() {
   const containerRef = useRef(null);
@@ -280,8 +279,8 @@ function PortfolioApp() {
     const clock = new THREE.Clock();
     let animationFrameId;
 
-    // Ajuste selon le sens de face de ton modèle (-Math.PI / 2, Math.PI / 2, Math.PI ou 0)
-    const faceOffsetAngle = Math.PI / 2;
+    // Retourné de 180° par rapport à Math.PI / 2 pour montrer la face avant de la pochette
+    const faceOffsetAngle = Math.PI / 2 + Math.PI;
 
     const normalizeAngle = (angle) => {
       let a = angle;
@@ -299,8 +298,6 @@ function PortfolioApp() {
 
       // ======================================================================
       // ZONE D'ANIMATION 1 : LA BOOMBOX
-      // C'est ici que tu ajouteras tes futures animations sur la boombox
-      // (ex: pulsation sur le beat, mouvement léger, ouverture/vibration, etc.)
       // ======================================================================
       if (boombox) {
         boombox.rotation.y += 0.25 * delta;
@@ -317,7 +314,7 @@ function PortfolioApp() {
         const isSelected = activeId === item.project.id;
         const hasOtherSelected = activeId !== null && !isSelected;
 
-        // Position et zoom selon l'état (sélectionnée à droite / autre en arrière-plan / survolée / repos)
+        // Position et zoom selon l'état (sélectionnée à gauche / autre en arrière-plan / survolée / repos)
         let targetPos = item.basePos;
         let targetScale = item.baseCaseScale;
 
@@ -369,8 +366,6 @@ function PortfolioApp() {
 
         // ====================================================================
         // ZONE D'ANIMATION 3 : LE CD À L'INTÉRIEUR DU BOÎTIER (`item.cd`)
-        // C'est ici que tu pourras faire glisser / sortir le CD quand
-        // `isSelected` est vrai (et le rentrer quand il ne l'est plus)
         // ====================================================================
         // Ex :
         // const targetCdX = isSelected ? 0.35 : 0;
