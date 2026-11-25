@@ -10,6 +10,12 @@ import {
   CASE_OPEN_ANGLE,
   CD_STEP_RIGHT_X,
   CD_STEP_BACK_Z,
+  CD_EJECT_SMOOTH,
+  CD_BOOMBOX_DROP_OFFSET,
+  CD_ARRIVE_THRESHOLD,
+  BOOMBOX_CD_INSERT_OFFSET,
+  BOOMBOX_CD_FLAT_ROTATION,
+  BOOMBOX_CD_SPIN_SPEED,
   SPEAKERS_PULSE_DELAY,
 } from '../data/projects.js';
 
@@ -31,21 +37,49 @@ export function createSceneAnimator({
   const clock = new THREE.Clock();
   let animationFrameId;
 
+  const dropWorldPos = new THREE.Vector3();
+  const dropLocalPos = new THREE.Vector3();
+  const boomboxCdTargetLocal = new THREE.Vector3();
+
   const animate = () => {
     animationFrameId = requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.05);
     const elapsed = clock.getElapsedTime();
     const smooth = 1 - Math.exp(-9 * delta);
+    const ejectSmooth = 1 - Math.exp(-CD_EJECT_SMOOTH * delta);
     const activeId = selectedIdRef.current;
     const hasAnySelected = activeId !== null;
 
     let shouldPulseSpeakers = false;
 
+    // 1. Boombox : position et taille (repos vs projet actif), sans rotation continue
+    if (state.boombox) {
+      const targetBoomboxPos = hasAnySelected ? BOOMBOX_ACTIVE_POS : BOOMBOX_POS;
+      const targetBoomboxScale = hasAnySelected
+        ? BOOMBOX_ACTIVE_SCALE
+        : BOOMBOX_SCALE;
+
+      state.boombox.position.lerp(targetBoomboxPos, smooth);
+
+      const nextBoomboxScale = THREE.MathUtils.lerp(
+        state.boombox.scale.x,
+        targetBoomboxScale,
+        smooth
+      );
+      state.boombox.scale.setScalar(nextBoomboxScale);
+    }
+
+    // Réinitialise le CD dédié à la boombox quand aucun projet n'est sélectionné
+    if (!hasAnySelected && state.boomboxCd) {
+      state.boomboxCd.visible = false;
+      state.boomboxCd.position.set(0, 0, 0);
+      state.boomboxCd.rotation.set(0, 0, 0);
+    }
+
     items.forEach((item) => {
       const isSelected = activeId === item.project.id;
       const hasOtherSelected = hasAnySelected && !isSelected;
 
-      // Chrono propre à l'état sélectionné pour séquencer les étapes
       if (isSelected) {
         item.selectElapsed += delta;
       } else {
@@ -53,7 +87,7 @@ export function createSceneAnimator({
         item.cdArrivedAt = null;
       }
 
-      // 1. Position et zoom de la jaquette
+      // 2. Position et zoom de la jaquette
       let targetPos = item.basePos;
       let targetScale = item.baseCaseScale;
 
@@ -77,7 +111,7 @@ export function createSceneAnimator({
       );
       item.jewelCase.scale.setScalar(nextScale);
 
-      // 2. Garde X et Z à 0 sur le boîtier principal, et oriente vers la caméra si survolé / sélectionné
+      // 3. Orientation de la jaquette
       item.jewelCase.rotation.x = THREE.MathUtils.lerp(
         item.jewelCase.rotation.x,
         0,
@@ -101,9 +135,9 @@ export function createSceneAnimator({
         item.jewelCase.rotation.y += 0.7 * delta;
       }
 
-      // 3. Ouverture horizontale de Case_Front (axe 'x')
+      // 4. Ouverture de Case_Front
       if (item.caseFront) {
-        const shouldOpenFront = isSelected && item.selectElapsed >= 0.25;
+        const shouldOpenFront = isSelected && item.selectElapsed >= 0.2;
         const baseRot = item.caseFront.userData.baseRot ?? {
           x: item.caseFront.rotation.x,
           y: item.caseFront.rotation.y,
@@ -141,66 +175,88 @@ export function createSceneAnimator({
         );
       }
 
-      // 4. CD : avance légèrement sur la droite (x), puis recule vers l'arrière (z)
-      const stepRightCd = isSelected && item.selectElapsed >= 0.55;
-      const stepBackCd = isSelected && item.selectElapsed >= 0.85;
+      // 5. Relais du CD : sortie de la pochette -> point devant la boombox -> relais vers state.boomboxCd
+      if (isSelected) {
+        const t = item.selectElapsed;
+        const stepOut = t >= 0.45;
+        const stepToDropPoint = t >= 0.85;
 
-      const targetCdX = stepRightCd
-        ? item.cdBasePos.x + CD_STEP_RIGHT_X
-        : item.cdBasePos.x;
-      const targetCdZ = stepBackCd
-        ? item.cdBasePos.z + CD_STEP_BACK_Z
-        : item.cdBasePos.z;
+        if (!item.cdHandedOff) {
+          item.cd.visible = true;
 
-      item.cd.position.x = THREE.MathUtils.lerp(
-        item.cd.position.x,
-        targetCdX,
-        smooth
-      );
-      item.cd.position.z = THREE.MathUtils.lerp(
-        item.cd.position.z,
-        targetCdZ,
-        smooth
-      );
-      item.cd.position.y = THREE.MathUtils.lerp(
-        item.cd.position.y,
-        item.cdBasePos.y,
-        smooth
-      );
+          if (stepToDropPoint && state.boombox) {
+            dropWorldPos
+              .copy(state.boombox.position)
+              .add(CD_BOOMBOX_DROP_OFFSET);
+            dropLocalPos.copy(dropWorldPos);
+            item.jewelCase.worldToLocal(dropLocalPos);
+            item.cd.position.lerp(dropLocalPos, smooth);
 
-      // Détecte l'arrivée du CD et déclenche les speakers après SPEAKERS_PULSE_DELAY (0.5s)
-      if (stepBackCd) {
-        const reachedBack = Math.abs(item.cd.position.z - targetCdZ) < 0.06;
-        if (reachedBack && item.cdArrivedAt === null) {
-          item.cdArrivedAt = item.selectElapsed;
+            if (item.cd.position.distanceTo(dropLocalPos) < CD_ARRIVE_THRESHOLD) {
+              item.cdHandedOff = true;
+              item.cd.visible = false;
+
+              if (state.boomboxCd) {
+                state.boomboxCd.visible = true;
+                state.boomboxCd.position.copy(CD_BOOMBOX_DROP_OFFSET);
+                state.boomboxCd.rotation.set(0, 0, 0);
+              }
+            }
+          } else {
+            dropLocalPos.set(
+              item.cdBasePos.x + (stepOut ? CD_STEP_RIGHT_X : 0),
+              item.cdBasePos.y,
+              item.cdBasePos.z + (stepOut ? CD_STEP_BACK_Z : 0)
+            );
+            item.cd.position.lerp(dropLocalPos, smooth);
+          }
+        } else if (state.boomboxCd) {
+          boomboxCdTargetLocal.copy(BOOMBOX_CD_INSERT_OFFSET);
+          state.boomboxCd.position.lerp(boomboxCdTargetLocal, smooth);
+
+          state.boomboxCd.rotation.x = THREE.MathUtils.lerp(
+            state.boomboxCd.rotation.x,
+            BOOMBOX_CD_FLAT_ROTATION.x,
+            smooth
+          );
+          state.boomboxCd.rotation.z = THREE.MathUtils.lerp(
+            state.boomboxCd.rotation.z,
+            BOOMBOX_CD_FLAT_ROTATION.z,
+            smooth
+          );
+          state.boomboxCd.rotation.y += BOOMBOX_CD_SPIN_SPEED * delta;
+
+          if (item.cdArrivedAt === null) {
+            item.cdArrivedAt = t;
+          }
+          if (t - item.cdArrivedAt >= SPEAKERS_PULSE_DELAY) {
+            shouldPulseSpeakers = true;
+          }
         }
-        if (
-          item.cdArrivedAt !== null &&
-          item.selectElapsed - item.cdArrivedAt >= SPEAKERS_PULSE_DELAY
-        ) {
-          shouldPulseSpeakers = true;
-        }
+      } else {
+        // Retour rapide du CD de la pochette quand on clique ailleurs
+        item.cdHandedOff = false;
+        item.cd.visible = true;
+        item.cd.position.lerp(item.cdBasePos, ejectSmooth);
+        item.cd.rotation.x = THREE.MathUtils.lerp(
+          item.cd.rotation.x,
+          0,
+          ejectSmooth
+        );
+        item.cd.rotation.y = THREE.MathUtils.lerp(
+          item.cd.rotation.y,
+          0,
+          ejectSmooth
+        );
+        item.cd.rotation.z = THREE.MathUtils.lerp(
+          item.cd.rotation.z,
+          0,
+          ejectSmooth
+        );
       }
     });
 
-    // 5. Boombox : pas de rotation continuous ; avance et se place à droite quand un projet est actif
-    if (state.boombox) {
-      const targetBoomboxPos = hasAnySelected ? BOOMBOX_ACTIVE_POS : BOOMBOX_POS;
-      const targetBoomboxScale = hasAnySelected
-        ? BOOMBOX_ACTIVE_SCALE
-        : BOOMBOX_SCALE;
-
-      state.boombox.position.lerp(targetBoomboxPos, smooth);
-
-      const nextBoomboxScale = THREE.MathUtils.lerp(
-        state.boombox.scale.x,
-        targetBoomboxScale,
-        smooth
-      );
-      state.boombox.scale.setScalar(nextBoomboxScale);
-    }
-
-    // 6. Speakers : pulsation après l'arrivée du CD + 0.5s
+    // 6. Speakers : pulsation après arrivée + SPEAKERS_PULSE_DELAY (0.5s)
     if (state.speakers && state.speakersBaseScale) {
       const pulseFactor = shouldPulseSpeakers
         ? 1 + Math.sin(elapsed * 10) * 0.045

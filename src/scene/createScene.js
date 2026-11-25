@@ -59,6 +59,13 @@ export function createPortfolioScene() {
       scene.add(boombox);
       state.boombox = boombox;
 
+      // Chargement du CD dédié à la boombox (invisible au départ)
+      const boomboxCd = cdGltf.scene.clone();
+      boomboxCd.visible = false;
+      boomboxCd.scale.setScalar(0.45); // ajuste la taille du CD sur la boombox si besoin
+      boombox.add(boomboxCd);
+      state.boomboxCd = boomboxCd;
+
       const speakersMesh = boombox.getObjectByName('boombox_boombox_speakers_0');
       state.speakers = speakersMesh || null;
       if (speakersMesh) {
